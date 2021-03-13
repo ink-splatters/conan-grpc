@@ -1,8 +1,8 @@
-from conans import ConanFile, CMake, tools
-from conans.errors import ConanInvalidConfiguration
-from conans.tools import Version
 import os
 import os.path
+
+from conans import ConanFile, CMake, tools
+
 
 def latest(url):
     import urllib.request
@@ -12,12 +12,12 @@ def latest(url):
     data = response.read()
     releases = json.loads(data.decode('utf-8'))
     for release in releases:
-        if release["draft"] == False and release["prerelease"] == False:
+        if not release["draft"] and not release["prerelease"]:
             return release["tag_name"]
     raise Exception('Unknown tags')
 
+
 def latestWithCache(url):
-    version = "master"
     try:
         with open("git.branch", "r") as version_file:
             version = version_file.readline().strip()
@@ -38,7 +38,7 @@ class grpcConan(ConanFile):
     author = "zcube <zcube@zcube.kr>"
     exports_sources = ["CMakeLists.txt", "grpc.cmake", "git.branch"]
     generators = "cmake", "cmake_find_package_multi"
-    short_paths = True
+    short_paths = True  # https://docs.conan.io/en/latest/reference/conanfile/attributes.html#short-paths
 
     settings = "os", "arch", "compiler", "build_type"
     options = {
@@ -46,7 +46,7 @@ class grpcConan(ConanFile):
         "build_codegen": [True, False],
         "build_csharp_ext": [True, False]
     }
-    
+
     default_options = {
         "fPIC": True,
         "build_codegen": True,
@@ -64,7 +64,7 @@ class grpcConan(ConanFile):
         "gflags/2.2.2",
         "re2/20201001",
     )
-    
+
     def set_version(self):
         url = 'https://api.github.com/repos/grpc/grpc/releases'
         self.version = latestWithCache(url)[1:]
@@ -72,12 +72,14 @@ class grpcConan(ConanFile):
     def configure(self):
         if self.settings.os == "Windows" and self.settings.compiler == "Visual Studio":
             del self.options.fPIC
-            
+
     def source(self):
         git = tools.Git(folder=self._source_subfolder)
         git.clone("https://github.com/grpc/grpc.git", "v" + self.version)
-        self.run("cd {} && git submodule init && git submodule update third_party/protobuf".format(self._source_subfolder))
-        self.run("cd {} && git submodule init && git submodule update third_party/googleapis".format(self._source_subfolder))
+        self.run(
+            "cd {} && git submodule init && git submodule update third_party/protobuf".format(self._source_subfolder))
+        self.run(
+            "cd {} && git submodule init && git submodule update third_party/googleapis".format(self._source_subfolder))
 
         cmake_path = os.path.join(self._source_subfolder, "CMakeLists.txt")
         ssl_cmake_path = os.path.join(self._source_subfolder, "cmake", "ssl.cmake")
@@ -86,8 +88,8 @@ class grpcConan(ConanFile):
         re2_cmake_path = os.path.join(self._source_subfolder, "cmake", "re2.cmake")
 
         tools.replace_in_file(cmake_path, "target_include_directories(check_epollexclusive",
-            '''set_source_files_properties(test/build/check_epollexclusive.c PROPERTIES LANGUAGE CXX)
-target_include_directories(check_epollexclusive''')
+                              '''set_source_files_properties(test/build/check_epollexclusive.c PROPERTIES LANGUAGE CXX)
+                  target_include_directories(check_epollexclusive''')
 
         tools.replace_in_file(cmake_path, "set(CMAKE_CXX_STANDARD 11)", "")
         tools.replace_in_file(cmake_path, "absl::time", "CONAN_PKG::abseil")
@@ -111,17 +113,17 @@ target_include_directories(check_epollexclusive''')
         protobuf_config_cmake_path = os.path.join(protobuf_cmake_path, "protobuf-config.cmake.in")
 
         tools.replace_in_file("{}/CMakeLists.txt".format(protobuf_cmake_path),
-            "set(LIB_PREFIX lib)", "set(LIB_PREFIX)")
+                              "set(LIB_PREFIX lib)", "set(LIB_PREFIX)")
 
         tools.replace_in_file("{}/CMakeLists.txt".format(protobuf_cmake_path),
-            "set(CMAKE_CXX_STANDARD 11)", "")
+                              "set(CMAKE_CXX_STANDARD 11)", "")
 
         tools.replace_in_file("{}/install.cmake".format(protobuf_cmake_path),
-            '''set(CMAKE_INSTALL_CMAKEDIR "cmake" CACHE STRING "${_cmakedir_desc}")''',
-            '''set(CMAKE_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/protobuf" CACHE STRING "${_cmakedir_desc}")''')
+                              '''set(CMAKE_INSTALL_CMAKEDIR "cmake" CACHE STRING "${_cmakedir_desc}")''',
+                              '''set(CMAKE_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/protobuf" CACHE STRING "${_cmakedir_desc}")''')
 
         tools.replace_in_file("{}/install.cmake".format(protobuf_cmake_path),
-            "CMAKE_INSTALL_CMAKEDIR", "PROTOBUF_CMAKE_INSTALL_CMAKEDIR")
+                              "CMAKE_INSTALL_CMAKEDIR", "PROTOBUF_CMAKE_INSTALL_CMAKEDIR")
 
         grpcconfig_cmake_path = os.path.join(self._source_subfolder, "cmake", "gRPCConfig.cmake.in")
         tools.save(grpcconfig_cmake_path, '''
@@ -150,13 +152,15 @@ set(_GRPC_PLUGIN "protoc-gen-grpc=${_GRPC_CPP_PLUGIN}")
 protobuf_generate(TARGET ${grpc_generate_TARGET} PLUGIN ${_GRPC_PLUGIN} LANGUAGE grpc GENERATE_EXTENSIONS .grpc.pb.h .grpc.pb.cc)
 
 endfunction(grpc_generate)
-''', append = True)
+''', append=True)
 
         tools.replace_in_file(protobuf_config_cmake_path,
-            '''file(RELATIVE_PATH _rel_dir ${DIR} ${_abs_dir})''', '''string(FIND "${_rel_dir}" "../" _is_in_parent_folder)''')
+                              '''file(RELATIVE_PATH _rel_dir ${DIR} ${_abs_dir})''',
+                              '''string(FIND "${_rel_dir}" "../" _is_in_parent_folder)''')
         tools.replace_in_file(protobuf_config_cmake_path,
-            '''if(NOT "${_rel_dir}" MATCHES "^\.\.[/\\\\].*")''', '''if (NOT ${_is_in_parent_folder} EQUAL 0)''')
-            
+                              '''if(NOT "${_rel_dir}" MATCHES "^\.\.[/\\\\].*")''',
+                              '''if (NOT ${_is_in_parent_folder} EQUAL 0)''')
+
     def _configure_cmake(self):
         cmake = CMake(self)
 
@@ -165,7 +169,7 @@ endfunction(grpc_generate)
         cmake.definitions['gRPC_BUILD_TESTS'] = "OFF"
         cmake.definitions['gRPC_INSTALL'] = "ON"
         cmake.definitions['gRPC_USE_PROTO_LITE'] = "OFF"
-        
+
         cmake.definitions['gRPC_ABSL_PROVIDER'] = "package"
         cmake.definitions['gRPC_CARES_PROVIDER'] = "package"
         cmake.definitions['gRPC_ZLIB_PROVIDER'] = "package"
@@ -185,7 +189,7 @@ endfunction(grpc_generate)
         cmake.definitions["protobuf_WITH_ZLIB"] = "ON"
         cmake.definitions["protobuf_BUILD_PROTOC_BINARIES"] = "ON" if self.options.build_codegen else "OFF"
         cmake.definitions["protobuf_BUILD_PROTOBUF_LITE"] = "OFF"
-        
+
         if self.settings.compiler == "Visual Studio":
             cmake.definitions["protobuf_MSVC_STATIC_RUNTIME"] = "MT" in self.settings.compiler.runtime
             cmake.definitions["gRPC_MSVC_STATIC_RUNTIME"] = "MT" in self.settings.compiler.runtime
@@ -200,7 +204,7 @@ endfunction(grpc_generate)
     @property
     def _cmake_install_base_path(self):
         return os.path.join("cmake")
-    
+
     def package(self):
         cmake = self._configure_cmake()
         cmake.install()
@@ -247,10 +251,10 @@ endfunction(grpc_generate)
         bindir = os.path.join(self.package_folder, "bin")
         self.output.info("Appending PATH environment variable: {}".format(bindir))
         self.env_info.PATH.append(bindir)
-        
-        #self.cpp_info.builddirs = [
+
+        # self.cpp_info.builddirs = [
         #    self._cmake_install_base_path,
-        #]
+        # ]
         self.cpp_info.build_modules = [
             os.path.join(self._cmake_install_base_path, "grpc.cmake"),
         ]
