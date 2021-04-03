@@ -1,34 +1,58 @@
-import os
-import os.path
+# import os
+# import os.path
+from pathlib import Path
 
 from conans import ConanFile, CMake, tools
 
 
-def latest(url):
-    import urllib.request
-    import json
+# https://github.com/conan-io/conan/issues/7007
+def replace_regex_in_file(file_path: Path, pattern, repl, flags=None, strict=True, output=None, encoding=None):
+    import re
+    from conans.util.fallbacks import default_output
+    from conans.client.tools.files import save, load, _manage_text_not_found
 
-    response = urllib.request.urlopen(url)
-    data = response.read()
-    releases = json.loads(data.decode('utf-8'))
-    for release in releases:
-        if not release["draft"] and not release["prerelease"]:
-            return release["tag_name"]
-    raise Exception('Unknown tags')
+    output = default_output(output, 'replace_regex_in_file')
 
+    encoding_in = encoding or "auto"
+    encoding_out = encoding or "utf-8"
+    content = load(file_path, encoding=encoding_in)
 
-def latestWithCache(url):
-    try:
-        with open("git.branch", "r") as version_file:
-            version = version_file.readline().strip()
-    except Exception as e:
-        version = latest(url)
-    with open("git.branch", "w") as version_file:
-        version_file.write(version)
-    return version
+    content, nb = re.subn(pattern, repl, content, flags=flags)
+    if nb == 0:
+        _manage_text_not_found(pattern, file_path, strict, 'replace_regex_in_file', output=output)
+
+    content = content.encode(encoding_out)
+    save(file_path, content, only_if_modified=False, encoding=encoding_out)
 
 
 class grpcConan(ConanFile):
+
+    @staticmethod
+    def _get_latest(url):
+        import urllib.request
+        import json
+
+        response = urllib.request.urlopen(url)
+        data = response.read()
+        releases = json.loads(data.decode('utf-8'))
+        for release in releases:
+            if not release["draft"] and not release["prerelease"]:
+                return release["tag_name"]
+        raise Exception('Unknown tags')
+
+    @staticmethod
+    def _get_latest_with_cache(url):
+        try:
+            with open("git.branch", "r") as version_file:
+                version = version_file.readline().strip()
+        except Exception:
+            version = grpcConan._get_latest(url)
+        with open("git.branch", "w") as version_file:
+            version_file.write(version)
+        return version
+
+
+
     name = "grpc"
     description = "gRPC framework with protobuf"
     topics = ("conan", "grpc", "rpc", "protobuf")
@@ -57,7 +81,8 @@ class grpcConan(ConanFile):
     _build_subfolder = "build_subfolder"
 
     requires = (
-        "zlib/1.2.11",
+        "zlib/1.2.1.1g11", = Path()
+    source_subfolder.
         "openssl/1.1.1g",
         "c-ares/1.16.1",
         "abseil/20200923.2",
@@ -67,7 +92,7 @@ class grpcConan(ConanFile):
 
     def set_version(self):
         url = 'https://api.github.com/repos/grpc/grpc/releases'
-        self.version = latestWithCache(url)[1:]
+        self.version = grpcConan._get_latest_with_cache(url)[1:]
 
     def configure(self):
         if self.settings.os == "Windows" and self.settings.compiler == "Visual Studio":
@@ -76,13 +101,22 @@ class grpcConan(ConanFile):
     def source(self):
         git = tools.Git(folder=self._source_subfolder)
         git.clone("https://github.com/grpc/grpc.git", "v" + self.version)
-        self.run(
-            "cd {} && git submodule init && git submodule update third_party/protobuf".format(self._source_subfolder))
-        self.run(
-            "cd {} && git submodule init && git submodule update third_party/googleapis".format(self._source_subfolder))
+        git.checkout_submodules(submodule='recursive')
 
-        cmake_path = os.path.join(self._source_subfolder, "CMakeLists.txt")
+        source_subfolder = Path(self._source_subfolder)
+        TODO
+        source_subfolder.
+        cmake_path = Path('{}/CMakeLists.txt'.format(self._source_subfolder))
+
+        # don't hardcode c++ standard
+        tools.replace_in_file(cmake_path, "set(CMAKE_CXX_STANDARD 11)", "")
+        # use Conan abseil package
+        replace_regex_in_file(cmake_path, 'absl::[a-z_]+', 'CONAN_PKG::abseil' )
+
+        # use Conan openssl package
         ssl_cmake_path = os.path.join(self._source_subfolder, "cmake", "ssl.cmake")
+        tools.replace_in_file(ssl_cmake_path, "${OPENSSL_LIBRARIES}", "CONAN_PKG::openssl")
+
         cares_cmake_path = os.path.join(self._source_subfolder, "cmake", "cares.cmake")
         gflags_cmake_path = os.path.join(self._source_subfolder, "cmake", "gflags.cmake")
         re2_cmake_path = os.path.join(self._source_subfolder, "cmake", "re2.cmake")
@@ -91,18 +125,8 @@ class grpcConan(ConanFile):
                               '''set_source_files_properties(test/build/check_epollexclusive.c PROPERTIES LANGUAGE CXX)
                   target_include_directories(check_epollexclusive''')
 
-        tools.replace_in_file(cmake_path, "set(CMAKE_CXX_STANDARD 11)", "")
-        tools.replace_in_file(cmake_path, "absl::time", "CONAN_PKG::abseil")
-        tools.replace_in_file(cmake_path, "absl::strings", "CONAN_PKG::abseil")
-        tools.replace_in_file(cmake_path, "absl::str_format", "CONAN_PKG::abseil")
-        tools.replace_in_file(cmake_path, "absl::memory", "CONAN_PKG::abseil")
-        tools.replace_in_file(cmake_path, "absl::optional", "CONAN_PKG::abseil")
-        tools.replace_in_file(cmake_path, "absl::base", "CONAN_PKG::abseil")
-        tools.replace_in_file(cmake_path, "absl::status", "CONAN_PKG::abseil")
-        tools.replace_in_file(cmake_path, "absl::flat_hash_set", "CONAN_PKG::abseil")
-        tools.replace_in_file(cmake_path, "absl::synchronization", "CONAN_PKG::abseil")
-        tools.replace_in_file(cmake_path, "absl::inlined_vector", "CONAN_PKG::abseil")
-        tools.replace_in_file(ssl_cmake_path, "${OPENSSL_LIBRARIES}", "CONAN_PKG::openssl")
+
+
         tools.replace_in_file(ssl_cmake_path, "OpenSSL::SSL OpenSSL::Crypto", "CONAN_PKG::openssl")
         tools.replace_in_file(cares_cmake_path, "c-ares::cares", "CONAN_PKG::c-ares")
         if os.path.isfile(gflags_cmake_path):
